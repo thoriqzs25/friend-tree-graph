@@ -458,6 +458,10 @@ export default function FriendGraphApp() {
         />
 
         <ConnectForm nodes={snapshot.nodes} onConnect={addLink} />
+
+        <div className="mt-auto pt-4 text-center text-[11px] text-zinc-600">
+          v1.0.0
+        </div>
       </aside>
 
       <div className="relative min-w-0 min-h-0 flex-1 overflow-hidden bg-zinc-950">
