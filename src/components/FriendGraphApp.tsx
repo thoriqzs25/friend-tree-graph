@@ -376,43 +376,18 @@ export default function FriendGraphApp() {
     };
 
     if (n.kind === "friend" && n.imageUrl) {
-      // Draw the photo clipped to a circle on a canvas sprite
-      const SIZE = 128;
-      const pc = document.createElement("canvas");
-      pc.width = SIZE;
-      pc.height = SIZE;
-      const pctx = pc.getContext("2d")!;
-
-      const img = new Image();
-      img.crossOrigin = "anonymous";
-      img.onload = () => {
-        pctx.clearRect(0, 0, SIZE, SIZE);
-        pctx.beginPath();
-        pctx.arc(SIZE / 2, SIZE / 2, SIZE / 2 - 2, 0, Math.PI * 2);
-        pctx.closePath();
-        pctx.clip();
-        // cover-fit the image
-        const aspect = img.naturalWidth / img.naturalHeight;
-        let sx = 0, sy = 0, sw = img.naturalWidth, sh = img.naturalHeight;
-        if (aspect > 1) { sw = img.naturalHeight; sx = (img.naturalWidth - sw) / 2; }
-        else { sh = img.naturalWidth; sy = (img.naturalHeight - sh) / 2; }
-        pctx.drawImage(img, sx, sy, sw, sh, 0, 0, SIZE, SIZE);
-        // ring
-        pctx.beginPath();
-        pctx.arc(SIZE / 2, SIZE / 2, SIZE / 2 - 2, 0, Math.PI * 2);
-        pctx.strokeStyle = "rgba(52,211,153,0.85)";
-        pctx.lineWidth = 5;
-        pctx.stroke();
-        ptex.needsUpdate = true;
-      };
-      img.src = n.imageUrl;
-
-      const ptex = new THREE.CanvasTexture(pc);
-      const pmat = new THREE.SpriteMaterial({ map: ptex, transparent: true, depthWrite: false });
-      const psprite = new THREE.Sprite(pmat);
-      psprite.scale.set(radius * 2.4, radius * 2.4, 1);
-      g.add(psprite);
-      g.add(buildLabel(radius * 1.5));
+      const r = radius * 1.2;
+      // Photo disc — CircleGeometry clips texture to a circle without canvas CORS issues
+      const ptex = new THREE.TextureLoader().load(n.imageUrl);
+      const photoMat = new THREE.MeshBasicMaterial({ map: ptex, side: THREE.DoubleSide });
+      const photoMesh = new THREE.Mesh(new THREE.CircleGeometry(r, 48), photoMat);
+      g.add(photoMesh);
+      // Emerald ring around the disc
+      const ringMat = new THREE.MeshBasicMaterial({ color: new THREE.Color("#34d399"), side: THREE.DoubleSide });
+      const ringMesh = new THREE.Mesh(new THREE.RingGeometry(r, r + 1.2, 48), ringMat);
+      ringMesh.position.z = -0.1;
+      g.add(ringMesh);
+      g.add(buildLabel(r + 5));
     } else {
       // Plain sphere for friends without image and all categories
       const geom = new THREE.SphereGeometry(radius, 28, 28);
