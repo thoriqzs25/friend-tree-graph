@@ -410,7 +410,7 @@ export default function FriendGraphApp() {
       <aside className="flex h-full w-[min(100%,380px)] shrink-0 flex-col gap-5 overflow-y-auto border-r border-zinc-800/80 p-5">
         <header>
           <h1 className="text-lg font-semibold tracking-tight text-white">
-            Friend graph
+            Friend Tree Graph
           </h1>
           <p className="mt-1 text-xs leading-relaxed text-zinc-500">
             3D graph with offline cache. Enable{" "}

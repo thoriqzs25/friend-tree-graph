@@ -13,8 +13,8 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Friend graph",
-  description: "3D friend and category graph — local data, ready for a database",
+  title: "Friend Tree Graph",
+  description: "3D friend tree graph — local data, ready for a database",
 };
 
 export default function RootLayout({
