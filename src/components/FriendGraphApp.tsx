@@ -1,0 +1,670 @@
+"use client";
+
+import * as THREE from "three";
+import dynamic from "next/dynamic";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
+import type { ForceGraphMethods, NodeObject } from "react-force-graph-3d";
+import type { GraphLinkRecord, GraphNodeRecord } from "@/types/friend-graph";
+import {
+  emptySnapshot,
+  graphPayloadEqual,
+  loadSnapshot,
+  saveSnapshot,
+} from "@/lib/friend-graph-storage";
+import type { FriendGraphSnapshot } from "@/types/friend-graph";
+import { isFirebaseConfigured } from "@/lib/firebase-config";
+
+const ForceGraph3D = dynamic(() => import("@/components/ForceGraph3DCanvas"), {
+  ssr: false,
+});
+
+type FGNode = GraphNodeRecord & {
+  id: string;
+  x?: number;
+  y?: number;
+  z?: number;
+  fx?: number;
+  fy?: number;
+  fz?: number;
+};
+
+type FGLink = { id: string; source: string; target: string };
+
+function displayName(n: GraphNodeRecord): string {
+  const t = n.name.trim();
+  if (t) return t;
+  return n.kind === "category" ? "Category" : "Friend";
+}
+
+function newId(): string {
+  return crypto.randomUUID();
+}
+
+export default function FriendGraphApp() {
+  const [syncMode, setSyncMode] = useState<"loading" | "local" | "firebase">(
+    "loading",
+  );
+  const [syncBanner, setSyncBanner] = useState<string | null>(null);
+
+  const [hydrated, setHydrated] = useState(false);
+  const [snapshot, setSnapshot] = useState<FriendGraphSnapshot>(() =>
+    emptySnapshot(),
+  );
+  const [focusedId, setFocusedId] = useState<string | null>(null);
+  const [search, setSearch] = useState("");
+
+  const fgRef = useRef<ForceGraphMethods<NodeObject, object> | undefined>(
+    undefined,
+  );
+
+  const [dims, setDims] = useState({ w: 800, h: 600 });
+  const containerRef = useRef<HTMLDivElement>(null);
+  const pushTimer = useRef<number | undefined>(undefined);
+
+  useEffect(() => {
+    let unsub: (() => void) | undefined;
+    let cancelled = false;
+
+    queueMicrotask(() => {
+      void (async () => {
+        if (!isFirebaseConfigured()) {
+          setSnapshot(loadSnapshot());
+          if (!cancelled) {
+            setSyncMode("local");
+            setHydrated(true);
+          }
+          return;
+        }
+        try {
+          const { subscribeFriendGraph } = await import(
+            "@/lib/friend-graph-firestore"
+          );
+          let firstRemote = true;
+          unsub = await subscribeFriendGraph({
+            onRemote: (remote) => {
+              if (cancelled) return;
+              setSnapshot((prev) =>
+                graphPayloadEqual(prev, remote) ? prev : remote,
+              );
+              if (firstRemote) {
+                firstRemote = false;
+                setSyncMode("firebase");
+                setHydrated(true);
+              }
+            },
+          });
+        } catch (e) {
+          console.error(e);
+          if (!cancelled) {
+            setSnapshot(loadSnapshot());
+            setSyncMode("local");
+            setSyncBanner(
+              "Firebase unavailable — using local storage only. Check env vars and Auth (Anonymous sign-in).",
+            );
+            setHydrated(true);
+          }
+        }
+      })();
+    });
+
+    return () => {
+      cancelled = true;
+      unsub?.();
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!hydrated || syncMode === "loading") return;
+    saveSnapshot(snapshot);
+    if (syncMode === "firebase") {
+      if (pushTimer.current) window.clearTimeout(pushTimer.current);
+      pushTimer.current = window.setTimeout(() => {
+        void import("@/lib/friend-graph-firestore").then(
+          ({ pushFriendGraph }) =>
+            pushFriendGraph(snapshot).catch((err) => console.error(err)),
+        );
+      }, 550);
+    }
+    return () => {
+      if (pushTimer.current) window.clearTimeout(pushTimer.current);
+    };
+  }, [snapshot, hydrated, syncMode]);
+
+  useEffect(() => {
+    if (!containerRef.current) return;
+    const el = containerRef.current;
+    const ro = new ResizeObserver(() => {
+      const r = el.getBoundingClientRect();
+      setDims({ w: Math.floor(r.width), h: Math.floor(r.height) });
+    });
+    ro.observe(el);
+    const r = el.getBoundingClientRect();
+    setDims({ w: Math.floor(r.width), h: Math.floor(r.height) });
+    return () => ro.disconnect();
+  }, []);
+
+  const graphData = useMemo(() => {
+    const nodes: FGNode[] = snapshot.nodes.map((n) => {
+      const node: FGNode = { ...n };
+      if (focusedId === n.id) {
+        node.fx = 0;
+        node.fy = 0;
+        node.fz = 0;
+      } else {
+        delete node.fx;
+        delete node.fy;
+        delete node.fz;
+      }
+      return node;
+    });
+    const links: FGLink[] = snapshot.links.map((l) => ({
+      id: l.id,
+      source: l.source,
+      target: l.target,
+    }));
+    return { nodes, links };
+  }, [snapshot.nodes, snapshot.links, focusedId]);
+
+  const applyCamera = useCallback(() => {
+    const fg = fgRef.current;
+    if (!fg) return;
+    fg.d3ReheatSimulation();
+    const t = window.setTimeout(() => {
+      if (focusedId) {
+        fg.cameraPosition({ x: 0, y: 0, z: 260 }, { x: 0, y: 0, z: 0 }, 1000);
+      } else {
+        fg.zoomToFit(900, 56);
+      }
+    }, 80);
+    return () => window.clearTimeout(t);
+  }, [focusedId]);
+
+  useEffect(() => {
+    if (!hydrated) return;
+    const cleanup = applyCamera();
+    return cleanup;
+  }, [hydrated, focusedId, applyCamera]);
+
+  const filteredForSearch = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    if (!q) return snapshot.nodes;
+    return snapshot.nodes.filter((n) =>
+      displayName(n).toLowerCase().includes(q),
+    );
+  }, [snapshot.nodes, search]);
+
+  const focusNode = useCallback((id: string) => {
+    setFocusedId(id);
+  }, []);
+
+  const clearFocus = useCallback(() => {
+    setFocusedId(null);
+  }, []);
+
+  const addFriend = useCallback(
+    (input: {
+      name: string;
+      description: string;
+      imageDataUrl: string | null;
+      connectToId: string | null;
+    }) => {
+      const node: GraphNodeRecord = {
+        id: newId(),
+        kind: "friend",
+        name: input.name.trim(),
+        ...(input.description.trim()
+          ? { description: input.description.trim() }
+          : {}),
+        ...(input.imageDataUrl ? { imageUrl: input.imageDataUrl } : {}),
+        createdAt: new Date().toISOString(),
+      };
+      setSnapshot((s) => {
+        const nodes = [...s.nodes, node];
+        let links = s.links;
+        if (input.connectToId) {
+          const link: GraphLinkRecord = {
+            id: newId(),
+            source: node.id,
+            target: input.connectToId,
+            createdAt: new Date().toISOString(),
+          };
+          links = [...links, link];
+        }
+        return { ...s, nodes, links };
+      });
+    },
+    [],
+  );
+
+  const addCategory = useCallback(
+    (name: string, connectToId: string | null) => {
+      const label = name.trim();
+      const node: GraphNodeRecord = {
+        id: newId(),
+        kind: "category",
+        name: label,
+        createdAt: new Date().toISOString(),
+      };
+      setSnapshot((s) => {
+        const nodes = [...s.nodes, node];
+        let links = s.links;
+        if (connectToId) {
+          links = [
+            ...links,
+            {
+              id: newId(),
+              source: node.id,
+              target: connectToId,
+              createdAt: new Date().toISOString(),
+            },
+          ];
+        }
+        return { ...s, nodes, links };
+      });
+    },
+    [],
+  );
+
+  const addLink = useCallback((sourceId: string, targetId: string) => {
+    if (sourceId === targetId) return;
+    setSnapshot((s) => {
+      const dup = s.links.some(
+        (l) =>
+          (l.source === sourceId && l.target === targetId) ||
+          (l.source === targetId && l.target === sourceId),
+      );
+      if (dup) return s;
+      return {
+        ...s,
+        links: [
+          ...s.links,
+          {
+            id: newId(),
+            source: sourceId,
+            target: targetId,
+            createdAt: new Date().toISOString(),
+          },
+        ],
+      };
+    });
+  }, []);
+
+  const nodeThreeObject = useCallback((node: NodeObject) => {
+    const n = node as FGNode;
+    const g = new THREE.Group();
+    const radius = n.kind === "category" ? 7 : 6;
+    const geom = new THREE.SphereGeometry(radius, 28, 28);
+    const mat = new THREE.MeshStandardMaterial({
+      color:
+        n.kind === "category" ? new THREE.Color("#818cf8") : new THREE.Color("#34d399"),
+      metalness: 0.15,
+      roughness: 0.55,
+    });
+
+    if (n.kind === "friend" && n.imageUrl) {
+      new THREE.TextureLoader().load(n.imageUrl, (tex) => {
+        tex.colorSpace = THREE.SRGBColorSpace;
+        mat.map = tex;
+        mat.color = new THREE.Color("#ffffff");
+        mat.needsUpdate = true;
+      });
+    }
+
+    const mesh = new THREE.Mesh(geom, mat);
+    g.add(mesh);
+    return g;
+  }, []);
+
+  if (!hydrated) {
+    return (
+      <div className="flex h-screen items-center justify-center bg-zinc-950 text-zinc-400">
+        Loading graph…
+      </div>
+    );
+  }
+
+  return (
+    <div className="flex h-screen w-full bg-zinc-950 text-zinc-100">
+      <aside className="flex w-[min(100%,380px)] shrink-0 flex-col gap-5 overflow-y-auto border-r border-zinc-800/80 p-5">
+        <header>
+          <h1 className="text-lg font-semibold tracking-tight text-white">
+            Friend graph
+          </h1>
+          <p className="mt-1 text-xs leading-relaxed text-zinc-500">
+            3D graph with offline cache. Enable{" "}
+            <span className="text-zinc-400">NEXT_PUBLIC_FIREBASE_*</span> for
+            Firestore sync (anonymous auth).
+          </p>
+          <p className="mt-2 text-[11px] text-zinc-500">
+            Status:{" "}
+            {syncMode === "loading" ? (
+              <span className="text-zinc-400">connecting…</span>
+            ) : syncMode === "firebase" ? (
+              <span className="text-emerald-400/90">Firestore sync</span>
+            ) : (
+              <span className="text-amber-400/90">Local only</span>
+            )}
+          </p>
+          {syncBanner ? (
+            <p className="mt-2 rounded-md border border-amber-500/30 bg-amber-950/40 px-2 py-1.5 text-[11px] text-amber-100/90">
+              {syncBanner}
+            </p>
+          ) : null}
+        </header>
+
+        <SearchAndFocus
+          search={search}
+          onSearchChange={setSearch}
+          results={filteredForSearch}
+          focusedId={focusedId}
+          onPick={(id) => focusNode(id)}
+          onClearFocus={clearFocus}
+          onFit={() => {
+            clearFocus();
+            setTimeout(() => fgRef.current?.zoomToFit(900, 56), 120);
+          }}
+        />
+
+        <AddFriendForm
+          nodes={snapshot.nodes}
+          onAdd={addFriend}
+        />
+
+        <AddCategoryForm
+          nodes={snapshot.nodes}
+          onAdd={addCategory}
+        />
+
+        <ConnectForm nodes={snapshot.nodes} onConnect={addLink} />
+      </aside>
+
+      <div ref={containerRef} className="relative min-w-0 flex-1 bg-zinc-950">
+        <ForceGraph3D
+          ref={fgRef}
+          width={dims.w}
+          height={dims.h}
+          backgroundColor="#0a0a0a"
+          graphData={graphData}
+          nodeLabel={(n) => {
+            const node = n as FGNode;
+            const title = displayName(node);
+            return node.description ? `${title}\n${node.description}` : title;
+          }}
+          nodeThreeObject={nodeThreeObject}
+          nodeThreeObjectExtend={false}
+          linkColor={() => "rgba(148,163,184,0.35)"}
+          linkWidth={0.6}
+          linkOpacity={0.75}
+          linkCurvature={0.18}
+          onNodeClick={(node) => focusNode(String(node.id))}
+          onBackgroundClick={() => clearFocus()}
+          enableNavigationControls
+          showNavInfo={false}
+          cooldownTicks={120}
+          onEngineStop={() => {
+            if (!focusedId) fgRef.current?.zoomToFit(700, 48);
+          }}
+        />
+        {focusedId ? (
+          <div className="pointer-events-none absolute bottom-4 left-4 rounded-lg border border-indigo-500/30 bg-indigo-950/80 px-3 py-2 text-xs text-indigo-100 backdrop-blur-sm">
+            Focus mode: centered node with connections pulled into orbit. Click
+            background to exit.
+          </div>
+        ) : null}
+      </div>
+    </div>
+  );
+}
+
+function SearchAndFocus(props: {
+  search: string;
+  onSearchChange: (v: string) => void;
+  results: GraphNodeRecord[];
+  focusedId: string | null;
+  onPick: (id: string) => void;
+  onClearFocus: () => void;
+  onFit: () => void;
+}) {
+  return (
+    <section className="space-y-2">
+      <h2 className="text-xs font-medium uppercase tracking-wide text-zinc-500">
+        Search & focus
+      </h2>
+      <input
+        type="search"
+        value={props.search}
+        onChange={(e) => props.onSearchChange(e.target.value)}
+        placeholder="Search by name…"
+        className="w-full rounded-md border border-zinc-700 bg-zinc-900/80 px-3 py-2 text-sm outline-none ring-indigo-500/0 transition focus:border-indigo-500/50 focus:ring-2"
+      />
+      <div className="max-h-40 overflow-y-auto rounded-md border border-zinc-800 bg-zinc-900/50">
+        {props.results.length === 0 ? (
+          <p className="p-3 text-xs text-zinc-500">No matches.</p>
+        ) : (
+          <ul className="divide-y divide-zinc-800/80">
+            {props.results.map((n) => (
+              <li key={n.id}>
+                <button
+                  type="button"
+                  onClick={() => props.onPick(n.id)}
+                  className={`flex w-full items-center justify-between px-3 py-2 text-left text-sm transition hover:bg-zinc-800/80 ${
+                    props.focusedId === n.id ? "bg-indigo-950/60 text-indigo-100" : ""
+                  }`}
+                >
+                  <span className="truncate">{displayName(n)}</span>
+                  <span className="ml-2 shrink-0 text-[10px] uppercase text-zinc-500">
+                    {n.kind}
+                  </span>
+                </button>
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
+      <div className="flex gap-2">
+        <button
+          type="button"
+          onClick={props.onClearFocus}
+          className="flex-1 rounded-md border border-zinc-700 bg-zinc-900 px-3 py-2 text-xs font-medium text-zinc-200 hover:bg-zinc-800"
+        >
+          Clear focus
+        </button>
+        <button
+          type="button"
+          onClick={props.onFit}
+          className="flex-1 rounded-md border border-zinc-700 bg-zinc-900 px-3 py-2 text-xs font-medium text-zinc-200 hover:bg-zinc-800"
+        >
+          Fit all
+        </button>
+      </div>
+    </section>
+  );
+}
+
+function AddFriendForm(props: {
+  nodes: GraphNodeRecord[];
+  onAdd: (input: {
+    name: string;
+    description: string;
+    imageDataUrl: string | null;
+    connectToId: string | null;
+  }) => void;
+}) {
+  const [name, setName] = useState("");
+  const [description, setDescription] = useState("");
+  const [connectToId, setConnectToId] = useState("");
+  const [imageDataUrl, setImageDataUrl] = useState<string | null>(null);
+
+  return (
+    <section className="space-y-3 rounded-lg border border-zinc-800 bg-zinc-900/40 p-4">
+      <h2 className="text-xs font-medium uppercase tracking-wide text-zinc-500">
+        Add friend
+      </h2>
+      <input
+        placeholder="Name (optional)"
+        value={name}
+        onChange={(e) => setName(e.target.value)}
+        className="w-full rounded-md border border-zinc-700 bg-zinc-950/80 px-3 py-2 text-sm outline-none focus:border-indigo-500/50"
+      />
+      <textarea
+        placeholder="Description (optional)"
+        value={description}
+        onChange={(e) => setDescription(e.target.value)}
+        rows={2}
+        className="w-full resize-none rounded-md border border-zinc-700 bg-zinc-950/80 px-3 py-2 text-sm outline-none focus:border-indigo-500/50"
+      />
+      <label className="block text-xs text-zinc-500">
+        Photo (optional)
+        <input
+          type="file"
+          accept="image/*"
+          className="mt-1 block w-full text-xs text-zinc-400 file:mr-2 file:rounded file:border-0 file:bg-zinc-800 file:px-2 file:py-1 file:text-zinc-200"
+          onChange={(e) => {
+            const file = e.target.files?.[0];
+            if (!file) {
+              setImageDataUrl(null);
+              return;
+            }
+            const reader = new FileReader();
+            reader.onload = () => {
+              if (typeof reader.result === "string") setImageDataUrl(reader.result);
+            };
+            reader.readAsDataURL(file);
+          }}
+        />
+      </label>
+      <select
+        value={connectToId}
+        onChange={(e) => setConnectToId(e.target.value)}
+        className="w-full rounded-md border border-zinc-700 bg-zinc-950/80 px-3 py-2 text-sm outline-none focus:border-indigo-500/50"
+      >
+        <option value="">Link to… (optional)</option>
+        {props.nodes.map((n) => (
+          <option key={n.id} value={n.id}>
+            {displayName(n)}
+          </option>
+        ))}
+      </select>
+      <button
+        type="button"
+        onClick={() => {
+          props.onAdd({
+            name,
+            description,
+            imageDataUrl,
+            connectToId: connectToId || null,
+          });
+          setName("");
+          setDescription("");
+          setConnectToId("");
+          setImageDataUrl(null);
+        }}
+        className="w-full rounded-md bg-indigo-600 py-2 text-sm font-medium text-white hover:bg-indigo-500"
+      >
+        Create friend node
+      </button>
+    </section>
+  );
+}
+
+function AddCategoryForm(props: {
+  nodes: GraphNodeRecord[];
+  onAdd: (name: string, connectToId: string | null) => void;
+}) {
+  const [name, setName] = useState("");
+  const [connectToId, setConnectToId] = useState("");
+
+  return (
+    <section className="space-y-3 rounded-lg border border-zinc-800 bg-zinc-900/40 p-4">
+      <h2 className="text-xs font-medium uppercase tracking-wide text-zinc-500">
+        Add category
+      </h2>
+      <input
+        placeholder="e.g. Padel, Climbing…"
+        value={name}
+        onChange={(e) => setName(e.target.value)}
+        className="w-full rounded-md border border-zinc-700 bg-zinc-950/80 px-3 py-2 text-sm outline-none focus:border-indigo-500/50"
+      />
+      <select
+        value={connectToId}
+        onChange={(e) => setConnectToId(e.target.value)}
+        className="w-full rounded-md border border-zinc-700 bg-zinc-950/80 px-3 py-2 text-sm outline-none focus:border-indigo-500/50"
+      >
+        <option value="">Link to… (optional)</option>
+        {props.nodes.map((n) => (
+          <option key={n.id} value={n.id}>
+            {displayName(n)}
+          </option>
+        ))}
+      </select>
+      <button
+        type="button"
+        onClick={() => {
+          if (!name.trim()) return;
+          props.onAdd(name, connectToId || null);
+          setName("");
+          setConnectToId("");
+        }}
+        className="w-full rounded-md border border-violet-500/40 bg-violet-950/60 py-2 text-sm font-medium text-violet-100 hover:bg-violet-900/60"
+      >
+        Create category node
+      </button>
+    </section>
+  );
+}
+
+function ConnectForm(props: {
+  nodes: GraphNodeRecord[];
+  onConnect: (a: string, b: string) => void;
+}) {
+  const [a, setA] = useState("");
+  const [b, setB] = useState("");
+
+  return (
+    <section className="space-y-3 rounded-lg border border-zinc-800 bg-zinc-900/40 p-4">
+      <h2 className="text-xs font-medium uppercase tracking-wide text-zinc-500">
+        Connect nodes
+      </h2>
+      <select
+        value={a}
+        onChange={(e) => setA(e.target.value)}
+        className="w-full rounded-md border border-zinc-700 bg-zinc-950/80 px-3 py-2 text-sm"
+      >
+        <option value="">From…</option>
+        {props.nodes.map((n) => (
+          <option key={n.id} value={n.id}>
+            {displayName(n)}
+          </option>
+        ))}
+      </select>
+      <select
+        value={b}
+        onChange={(e) => setB(e.target.value)}
+        className="w-full rounded-md border border-zinc-700 bg-zinc-950/80 px-3 py-2 text-sm"
+      >
+        <option value="">To…</option>
+        {props.nodes.map((n) => (
+          <option key={n.id} value={n.id}>
+            {displayName(n)}
+          </option>
+        ))}
+      </select>
+      <button
+        type="button"
+        onClick={() => {
+          if (a && b) props.onConnect(a, b);
+        }}
+        disabled={!a || !b || a === b}
+        className="w-full rounded-md border border-zinc-600 bg-zinc-800 py-2 text-sm font-medium text-zinc-100 disabled:opacity-40"
+      >
+        Add edge
+      </button>
+    </section>
+  );
+}
