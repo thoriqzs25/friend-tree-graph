@@ -388,8 +388,9 @@ export default function FriendGraphApp() {
       g.add(psprite);
       g.add(buildLabel(radius * 1.5));
 
-      // Fetch as blob → object URL so the browser never serves a non-CORS cached copy
-      fetch(n.imageUrl)
+      // Load via same-origin proxy so no CORS headers are needed from Firebase Storage
+      const proxyUrl = `/api/image-proxy?url=${encodeURIComponent(n.imageUrl)}`;
+      fetch(proxyUrl)
         .then((r) => r.blob())
         .then((blob) => {
           const blobUrl = URL.createObjectURL(blob);
@@ -896,7 +897,6 @@ function EditNodeModal(props: {
                   <img
                     src={imageDataUrl}
                     alt="preview"
-                    crossOrigin="anonymous"
                     className="h-12 w-12 rounded-full object-cover ring-2 ring-emerald-500/50"
                   />
                   <button

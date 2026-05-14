@@ -6,6 +6,7 @@ const AUTH_VALUE = "ok";
 const BYPASS_PREFIXES = [
   "/pin",
   "/api/verify-pin",
+  "/api/image-proxy",
   "/_next",
   "/favicon",
 ];
