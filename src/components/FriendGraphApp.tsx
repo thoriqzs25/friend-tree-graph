@@ -384,6 +384,7 @@ export default function FriendGraphApp() {
       const pctx = pc.getContext("2d")!;
 
       const img = new Image();
+      img.crossOrigin = "anonymous";
       img.onload = () => {
         pctx.clearRect(0, 0, SIZE, SIZE);
         pctx.beginPath();
@@ -833,6 +834,9 @@ function EditNodeModal(props: {
   const [name, setName] = useState(node.name);
   const [description, setDescription] = useState(node.description ?? "");
   const [imageDataUrl, setImageDataUrl] = useState<string | null>(node.imageUrl ?? null);
+  useEffect(() => {
+    setImageDataUrl(node.imageUrl ?? null);
+  }, [node.imageUrl]);
   const [confirmDelete, setConfirmDelete] = useState(false);
 
   const inputCls =
