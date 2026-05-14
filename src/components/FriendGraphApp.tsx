@@ -199,10 +199,15 @@ export default function FriendGraphApp() {
         }));
       };
 
-      // If the new imageUrl is a data URL, upload it first
+      // If the new imageUrl is a data URL, compress then upload
       if (patch.imageUrl?.startsWith("data:")) {
-        void import("@/lib/friend-graph-storage-upload")
-          .then(({ uploadNodeImage }) => uploadNodeImage(id, patch.imageUrl!))
+        void import("@/lib/compress-image")
+          .then(({ compressImage }) => compressImage(patch.imageUrl!))
+          .then((compressed) =>
+            import("@/lib/friend-graph-storage-upload").then(({ uploadNodeImage }) =>
+              uploadNodeImage(id, compressed),
+            ),
+          )
           .then((url) => apply({ ...patch, imageUrl: url }))
           .catch(() => apply(patch));
       } else {
@@ -261,8 +266,13 @@ export default function FriendGraphApp() {
       };
 
       if (input.imageDataUrl) {
-        void import("@/lib/friend-graph-storage-upload")
-          .then(({ uploadNodeImage }) => uploadNodeImage(nodeId, input.imageDataUrl!))
+        void import("@/lib/compress-image")
+          .then(({ compressImage }) => compressImage(input.imageDataUrl!))
+          .then((compressed) =>
+            import("@/lib/friend-graph-storage-upload").then(({ uploadNodeImage }) =>
+              uploadNodeImage(nodeId, compressed),
+            ),
+          )
           .then((url) => addToSnapshot(url))
           .catch(() => addToSnapshot());
       } else {
@@ -661,7 +671,11 @@ function AddFriendForm(props: {
             }
             const reader = new FileReader();
             reader.onload = () => {
-              if (typeof reader.result === "string") setImageDataUrl(reader.result);
+              if (typeof reader.result === "string") {
+                void import("@/lib/compress-image")
+                  .then(({ compressImage }) => compressImage(reader.result as string))
+                  .then((compressed) => setImageDataUrl(compressed));
+              }
             };
             reader.readAsDataURL(file);
           }}
@@ -882,8 +896,11 @@ function EditNodeModal(props: {
                   if (!file) return;
                   const reader = new FileReader();
                   reader.onload = () => {
-                    if (typeof reader.result === "string")
-                      setImageDataUrl(reader.result);
+                    if (typeof reader.result === "string") {
+                      void import("@/lib/compress-image")
+                        .then(({ compressImage }) => compressImage(reader.result as string))
+                        .then((compressed) => setImageDataUrl(compressed));
+                    }
                   };
                   reader.readAsDataURL(file);
                 }}
