@@ -66,6 +66,9 @@ export default function FriendGraphApp() {
   const [dims, setDims] = useState({ w: 800, h: 600 });
   const containerRef = useRef<HTMLDivElement>(null);
   const pushTimer = useRef<number | undefined>(undefined);
+  // Track whether the current snapshot came from a remote Firestore update
+  // (so we don't write it straight back, causing a pointless round-trip).
+  const remoteSnapshotRef = useRef<FriendGraphSnapshot | null>(null);
 
   useEffect(() => {
     let unsub: (() => void) | undefined;
@@ -81,6 +84,7 @@ export default function FriendGraphApp() {
           unsub = await subscribeFriendGraph({
             onRemote: (remote) => {
               if (cancelled) return;
+              remoteSnapshotRef.current = remote;
               setSnapshot((prev) =>
                 graphPayloadEqual(prev, remote) ? prev : remote,
               );
@@ -112,6 +116,14 @@ export default function FriendGraphApp() {
 
   useEffect(() => {
     if (!hydrated || syncMode !== "firebase") return;
+    // Skip if this snapshot is the one we just received from Firestore.
+    if (
+      remoteSnapshotRef.current &&
+      graphPayloadEqual(remoteSnapshotRef.current, snapshot)
+    ) {
+      remoteSnapshotRef.current = null;
+      return;
+    }
     if (pushTimer.current) window.clearTimeout(pushTimer.current);
     pushTimer.current = window.setTimeout(() => {
       void import("@/lib/friend-graph-firestore").then(

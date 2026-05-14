@@ -12,6 +12,11 @@ function friendGraphRef() {
   return doc(getFirestoreDb(), "owners", getGraphOwnerId(), "graphs", "main");
 }
 
+/** Remove undefined fields so Firestore doesn't reject the document. */
+function stripUndefined<T>(value: T): T {
+  return JSON.parse(JSON.stringify(value)) as T;
+}
+
 export async function pushFriendGraph(
   snapshot: FriendGraphSnapshot,
 ): Promise<void> {
@@ -19,12 +24,12 @@ export async function pushFriendGraph(
     ...snapshot,
     updatedAt: new Date().toISOString(),
   };
-  await setDoc(friendGraphRef(), {
+  await setDoc(friendGraphRef(), stripUndefined({
     version: next.version,
     updatedAt: next.updatedAt,
     nodes: next.nodes,
     links: next.links,
-  });
+  }));
 }
 
 type SubscribeOpts = {
