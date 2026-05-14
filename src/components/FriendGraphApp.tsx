@@ -141,14 +141,11 @@ export default function FriendGraphApp() {
 
   useEffect(() => {
     const update = () =>
-      setDims({
-        w: window.innerWidth - (sidebarOpen ? SIDEBAR_W : 0),
-        h: window.innerHeight,
-      });
+      setDims({ w: window.innerWidth, h: window.innerHeight });
     update();
     window.addEventListener("resize", update);
     return () => window.removeEventListener("resize", update);
-  }, [sidebarOpen]);
+  }, []);
 
   const graphData = useMemo(() => {
     const nodes: FGNode[] = snapshot.nodes.map((n) => {
@@ -407,10 +404,27 @@ export default function FriendGraphApp() {
   }
 
   return (
-    <div className="flex h-screen w-screen overflow-hidden bg-zinc-950 text-zinc-100">
+    <div className="relative h-screen w-screen overflow-hidden bg-zinc-950 text-zinc-100">
+      {/* backdrop — tap outside on mobile to close */}
+      {sidebarOpen && (
+        <div
+          className="absolute inset-0 z-20 bg-black/40 sm:hidden"
+          onClick={() => setSidebarOpen(false)}
+        />
+      )}
+
+      {/* toggle button — always fixed top-left, always reachable */}
+      <button
+        onClick={() => setSidebarOpen((v) => !v)}
+        className="fixed left-3 top-3 z-50 flex h-8 w-8 items-center justify-center rounded-lg border border-zinc-700 bg-zinc-900/90 text-zinc-400 backdrop-blur-sm transition hover:border-zinc-500 hover:text-white"
+        title={sidebarOpen ? "Collapse sidebar" : "Expand sidebar"}
+      >
+        {sidebarOpen ? "←" : "→"}
+      </button>
+
       <aside
-        className={`flex h-full w-[380px] shrink-0 flex-col gap-5 overflow-y-auto border-r border-zinc-800/80 p-5 transition-all duration-300 ease-in-out ${
-          sidebarOpen ? "translate-x-0" : "-translate-x-full absolute z-10"
+        className={`absolute left-0 top-0 z-30 flex h-full w-[min(380px,85vw)] flex-col gap-5 overflow-y-auto border-r border-zinc-800/80 bg-zinc-950 p-5 transition-transform duration-300 ease-in-out ${
+          sidebarOpen ? "translate-x-0" : "-translate-x-full"
         }`}
       >
         <header>
@@ -469,14 +483,7 @@ export default function FriendGraphApp() {
         </div>
       </aside>
 
-      <div className="relative min-w-0 min-h-0 flex-1 overflow-hidden bg-zinc-950">
-        <button
-          onClick={() => setSidebarOpen((v) => !v)}
-          className="absolute left-3 top-3 z-20 flex h-8 w-8 items-center justify-center rounded-lg border border-zinc-700 bg-zinc-900/90 text-zinc-400 backdrop-blur-sm transition hover:border-zinc-500 hover:text-white"
-          title={sidebarOpen ? "Collapse sidebar" : "Expand sidebar"}
-        >
-          {sidebarOpen ? "←" : "→"}
-        </button>
+      <div className="relative h-full w-full overflow-hidden bg-zinc-950">
         <ForceGraph3D
           ref={fgRef}
           width={dims.w}
