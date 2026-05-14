@@ -426,7 +426,7 @@ export default function FriendGraphApp() {
         ) : (
           <>
             <div className="h-6 w-6 animate-spin rounded-full border-2 border-zinc-700 border-t-indigo-500" />
-            <p className="text-sm">Connecting to Firestore…</p>
+            <p className="text-sm">Connecting…</p>
           </>
         )}
       </div>
