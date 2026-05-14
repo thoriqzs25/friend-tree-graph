@@ -57,6 +57,7 @@ export default function FriendGraphApp() {
     emptySnapshot(),
   );
   const [focusedId, setFocusedId] = useState<string | null>(null);
+  const [editingNodeId, setEditingNodeId] = useState<string | null>(null);
   const [search, setSearch] = useState("");
 
   const fgRef = useRef<ForceGraphMethods<NodeObject, object> | undefined>(
@@ -204,6 +205,28 @@ export default function FriendGraphApp() {
 
   const clearFocus = useCallback(() => {
     setFocusedId(null);
+  }, []);
+
+  const updateNode = useCallback(
+    (id: string, patch: Partial<Pick<GraphNodeRecord, "name" | "description" | "imageUrl">>) => {
+      setSnapshot((s) => ({
+        ...s,
+        nodes: s.nodes.map((n) =>
+          n.id === id ? { ...n, ...patch } : n,
+        ),
+      }));
+    },
+    [],
+  );
+
+  const deleteNode = useCallback((id: string) => {
+    setSnapshot((s) => ({
+      ...s,
+      nodes: s.nodes.filter((n) => n.id !== id),
+      links: s.links.filter((l) => l.source !== id && l.target !== id),
+    }));
+    setFocusedId((prev) => (prev === id ? null : prev));
+    setEditingNodeId(null);
   }, []);
 
   const addFriend = useCallback(
@@ -455,8 +478,15 @@ export default function FriendGraphApp() {
           linkWidth={0.6}
           linkOpacity={0.75}
           linkCurvature={0.18}
-          onNodeClick={(node) => focusNode(String(node.id))}
-          onBackgroundClick={() => clearFocus()}
+          onNodeClick={(node) => {
+            const id = String(node.id);
+            focusNode(id);
+            setEditingNodeId(id);
+          }}
+          onBackgroundClick={() => {
+            clearFocus();
+            setEditingNodeId(null);
+          }}
           enableNavigationControls
           showNavInfo={false}
           cooldownTicks={120}
@@ -464,10 +494,19 @@ export default function FriendGraphApp() {
             if (!focusedId) fgRef.current?.zoomToFit(700, 48);
           }}
         />
-        {focusedId ? (
+        {editingNodeId ? (
+          <EditNodeModal
+            node={snapshot.nodes.find((n) => n.id === editingNodeId)!}
+            onSave={(patch) => {
+              updateNode(editingNodeId, patch);
+              setEditingNodeId(null);
+            }}
+            onDelete={() => deleteNode(editingNodeId)}
+            onClose={() => setEditingNodeId(null)}
+          />
+        ) : focusedId ? (
           <div className="pointer-events-none absolute bottom-4 left-4 rounded-lg border border-indigo-500/30 bg-indigo-950/80 px-3 py-2 text-xs text-indigo-100 backdrop-blur-sm">
-            Focus mode: centered node with connections pulled into orbit. Click
-            background to exit.
+            Click background to exit focus. Click a node to edit it.
           </div>
         ) : null}
       </div>
@@ -719,5 +758,144 @@ function ConnectForm(props: {
         Add edge
       </button>
     </section>
+  );
+}
+
+function EditNodeModal(props: {
+  node: GraphNodeRecord;
+  onSave: (patch: Partial<Pick<GraphNodeRecord, "name" | "description" | "imageUrl">>) => void;
+  onDelete: () => void;
+  onClose: () => void;
+}) {
+  const { node } = props;
+  const [name, setName] = useState(node.name);
+  const [description, setDescription] = useState(node.description ?? "");
+  const [imageDataUrl, setImageDataUrl] = useState<string | null>(node.imageUrl ?? null);
+  const [confirmDelete, setConfirmDelete] = useState(false);
+
+  const inputCls =
+    "w-full rounded-md border border-zinc-600 bg-zinc-900 px-3 py-2 text-sm outline-none focus:border-indigo-500/60";
+
+  return (
+    <div className="absolute inset-0 flex items-center justify-center bg-black/50 backdrop-blur-sm">
+      <div
+        className="w-full max-w-sm rounded-xl border border-zinc-700 bg-zinc-900 shadow-2xl"
+        onClick={(e) => e.stopPropagation()}
+      >
+        {/* header */}
+        <div className="flex items-center justify-between border-b border-zinc-700/60 px-5 py-4">
+          <span className="text-sm font-semibold text-white">
+            Edit{" "}
+            <span className="text-zinc-400">{node.kind === "category" ? "category" : "friend"}</span>
+          </span>
+          <button
+            onClick={props.onClose}
+            className="rounded-md p-1 text-zinc-400 hover:bg-zinc-800 hover:text-white"
+          >
+            ✕
+          </button>
+        </div>
+
+        {/* body */}
+        <div className="space-y-4 px-5 py-4">
+          <div>
+            <label className="mb-1 block text-xs text-zinc-400">Name</label>
+            <input
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              placeholder="Name"
+              className={inputCls}
+            />
+          </div>
+
+          <div>
+            <label className="mb-1 block text-xs text-zinc-400">Description</label>
+            <textarea
+              value={description}
+              onChange={(e) => setDescription(e.target.value)}
+              rows={2}
+              placeholder="Description (optional)"
+              className={`${inputCls} resize-none`}
+            />
+          </div>
+
+          {node.kind === "friend" && (
+            <div>
+              <label className="mb-1 block text-xs text-zinc-400">Photo</label>
+              {imageDataUrl && (
+                <div className="mb-2 flex items-center gap-3">
+                  <img
+                    src={imageDataUrl}
+                    alt="preview"
+                    className="h-12 w-12 rounded-full object-cover ring-2 ring-emerald-500/50"
+                  />
+                  <button
+                    onClick={() => setImageDataUrl(null)}
+                    className="text-xs text-zinc-400 hover:text-red-400"
+                  >
+                    Remove photo
+                  </button>
+                </div>
+              )}
+              <input
+                type="file"
+                accept="image/*"
+                className="w-full text-xs text-zinc-400 file:mr-2 file:rounded file:border-0 file:bg-zinc-800 file:px-2 file:py-1 file:text-zinc-200"
+                onChange={(e) => {
+                  const file = e.target.files?.[0];
+                  if (!file) return;
+                  const reader = new FileReader();
+                  reader.onload = () => {
+                    if (typeof reader.result === "string")
+                      setImageDataUrl(reader.result);
+                  };
+                  reader.readAsDataURL(file);
+                }}
+              />
+            </div>
+          )}
+        </div>
+
+        {/* footer */}
+        <div className="flex items-center justify-between border-t border-zinc-700/60 px-5 py-4">
+          {confirmDelete ? (
+            <div className="flex items-center gap-2">
+              <span className="text-xs text-red-400">Sure?</span>
+              <button
+                onClick={props.onDelete}
+                className="rounded-md bg-red-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-red-500"
+              >
+                Yes, delete
+              </button>
+              <button
+                onClick={() => setConfirmDelete(false)}
+                className="rounded-md border border-zinc-600 px-3 py-1.5 text-xs text-zinc-300 hover:bg-zinc-800"
+              >
+                Cancel
+              </button>
+            </div>
+          ) : (
+            <button
+              onClick={() => setConfirmDelete(true)}
+              className="rounded-md border border-red-500/30 px-3 py-1.5 text-xs text-red-400 hover:bg-red-950/50"
+            >
+              Delete node
+            </button>
+          )}
+          <button
+            onClick={() =>
+              props.onSave({
+                name: name.trim(),
+                description: description.trim() || undefined,
+                imageUrl: imageDataUrl ?? undefined,
+              })
+            }
+            className="rounded-md bg-indigo-600 px-4 py-1.5 text-xs font-medium text-white hover:bg-indigo-500"
+          >
+            Save
+          </button>
+        </div>
+      </div>
+    </div>
   );
 }
