@@ -24,7 +24,10 @@ export function getFirebaseApp(): FirebaseApp {
 }
 
 export function getFirestoreDb() {
-  return getFirestore(getFirebaseApp());
+  const databaseId = process.env.NEXT_PUBLIC_FIREBASE_DATABASE_ID;
+  return databaseId
+    ? getFirestore(getFirebaseApp(), databaseId)
+    : getFirestore(getFirebaseApp());
 }
 
 export function getFirebaseStorage() {
