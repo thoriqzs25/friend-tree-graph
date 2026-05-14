@@ -65,6 +65,7 @@ export default function FriendGraphApp() {
   );
 
   const SIDEBAR_W = 380;
+  const [sidebarOpen, setSidebarOpen] = useState(true);
   const [dims, setDims] = useState({ w: 800, h: 600 });
   const containerRef = useRef<HTMLDivElement>(null);
   const pushTimer = useRef<number | undefined>(undefined);
@@ -141,13 +142,13 @@ export default function FriendGraphApp() {
   useEffect(() => {
     const update = () =>
       setDims({
-        w: window.innerWidth - SIDEBAR_W,
+        w: window.innerWidth - (sidebarOpen ? SIDEBAR_W : 0),
         h: window.innerHeight,
       });
     update();
     window.addEventListener("resize", update);
     return () => window.removeEventListener("resize", update);
-  }, []);
+  }, [sidebarOpen]);
 
   const graphData = useMemo(() => {
     const nodes: FGNode[] = snapshot.nodes.map((n) => {
@@ -407,7 +408,11 @@ export default function FriendGraphApp() {
 
   return (
     <div className="flex h-screen w-screen overflow-hidden bg-zinc-950 text-zinc-100">
-      <aside className="flex h-full w-[min(100%,380px)] shrink-0 flex-col gap-5 overflow-y-auto border-r border-zinc-800/80 p-5">
+      <aside
+        className={`flex h-full w-[380px] shrink-0 flex-col gap-5 overflow-y-auto border-r border-zinc-800/80 p-5 transition-all duration-300 ease-in-out ${
+          sidebarOpen ? "translate-x-0" : "-translate-x-full absolute z-10"
+        }`}
+      >
         <header>
           <h1 className="text-lg font-semibold tracking-tight text-white">
             Friend Tree Graph
@@ -465,6 +470,13 @@ export default function FriendGraphApp() {
       </aside>
 
       <div className="relative min-w-0 min-h-0 flex-1 overflow-hidden bg-zinc-950">
+        <button
+          onClick={() => setSidebarOpen((v) => !v)}
+          className="absolute left-3 top-3 z-20 flex h-8 w-8 items-center justify-center rounded-lg border border-zinc-700 bg-zinc-900/90 text-zinc-400 backdrop-blur-sm transition hover:border-zinc-500 hover:text-white"
+          title={sidebarOpen ? "Collapse sidebar" : "Expand sidebar"}
+        >
+          {sidebarOpen ? "←" : "→"}
+        </button>
         <ForceGraph3D
           ref={fgRef}
           width={dims.w}
