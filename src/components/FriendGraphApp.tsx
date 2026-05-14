@@ -14,11 +14,8 @@ import type { GraphLinkRecord, GraphNodeRecord } from "@/types/friend-graph";
 import {
   emptySnapshot,
   graphPayloadEqual,
-  loadSnapshot,
-  saveSnapshot,
 } from "@/lib/friend-graph-storage";
 import type { FriendGraphSnapshot } from "@/types/friend-graph";
-import { isFirebaseConfigured } from "@/lib/firebase-config";
 
 const ForceGraph3D = dynamic(() => import("@/components/ForceGraph3DCanvas"), {
   ssr: false,
@@ -76,14 +73,6 @@ export default function FriendGraphApp() {
 
     queueMicrotask(() => {
       void (async () => {
-        if (!isFirebaseConfigured()) {
-          setSnapshot(loadSnapshot());
-          if (!cancelled) {
-            setSyncMode("local");
-            setHydrated(true);
-          }
-          return;
-        }
         try {
           const { subscribeFriendGraph } = await import(
             "@/lib/friend-graph-firestore"
@@ -105,10 +94,9 @@ export default function FriendGraphApp() {
         } catch (e) {
           console.error(e);
           if (!cancelled) {
-            setSnapshot(loadSnapshot());
             setSyncMode("local");
             setSyncBanner(
-              "Firebase unavailable — using local storage only. Check env vars and Auth (Anonymous sign-in).",
+              "Firestore unavailable — check your NEXT_PUBLIC_FIREBASE_* and NEXT_PUBLIC_GRAPH_OWNER_ID env vars.",
             );
             setHydrated(true);
           }
@@ -123,17 +111,14 @@ export default function FriendGraphApp() {
   }, []);
 
   useEffect(() => {
-    if (!hydrated || syncMode === "loading") return;
-    saveSnapshot(snapshot);
-    if (syncMode === "firebase") {
-      if (pushTimer.current) window.clearTimeout(pushTimer.current);
-      pushTimer.current = window.setTimeout(() => {
-        void import("@/lib/friend-graph-firestore").then(
-          ({ pushFriendGraph }) =>
-            pushFriendGraph(snapshot).catch((err) => console.error(err)),
-        );
-      }, 550);
-    }
+    if (!hydrated || syncMode !== "firebase") return;
+    if (pushTimer.current) window.clearTimeout(pushTimer.current);
+    pushTimer.current = window.setTimeout(() => {
+      void import("@/lib/friend-graph-firestore").then(
+        ({ pushFriendGraph }) =>
+          pushFriendGraph(snapshot).catch((err) => console.error(err)),
+      );
+    }, 550);
     return () => {
       if (pushTimer.current) window.clearTimeout(pushTimer.current);
     };
@@ -207,12 +192,22 @@ export default function FriendGraphApp() {
 
   const updateNode = useCallback(
     (id: string, patch: Partial<Pick<GraphNodeRecord, "name" | "description" | "imageUrl">>) => {
-      setSnapshot((s) => ({
-        ...s,
-        nodes: s.nodes.map((n) =>
-          n.id === id ? { ...n, ...patch } : n,
-        ),
-      }));
+      const apply = (resolvedPatch: typeof patch) => {
+        setSnapshot((s) => ({
+          ...s,
+          nodes: s.nodes.map((n) => (n.id === id ? { ...n, ...resolvedPatch } : n)),
+        }));
+      };
+
+      // If the new imageUrl is a data URL, upload it first
+      if (patch.imageUrl?.startsWith("data:")) {
+        void import("@/lib/friend-graph-storage-upload")
+          .then(({ uploadNodeImage }) => uploadNodeImage(id, patch.imageUrl!))
+          .then((url) => apply({ ...patch, imageUrl: url }))
+          .catch(() => apply(patch));
+      } else {
+        apply(patch);
+      }
     },
     [],
   );
@@ -225,6 +220,9 @@ export default function FriendGraphApp() {
     }));
     setFocusedId((prev) => (prev === id ? null : prev));
     setEditingNodeId(null);
+    void import("@/lib/friend-graph-storage-upload").then(({ deleteNodeImage }) =>
+      deleteNodeImage(id),
+    );
   }, []);
 
   const addFriend = useCallback(
@@ -234,30 +232,42 @@ export default function FriendGraphApp() {
       imageDataUrl: string | null;
       connectToId: string | null;
     }) => {
-      const node: GraphNodeRecord = {
-        id: newId(),
-        kind: "friend",
-        name: input.name.trim(),
-        ...(input.description.trim()
-          ? { description: input.description.trim() }
-          : {}),
-        ...(input.imageDataUrl ? { imageUrl: input.imageDataUrl } : {}),
-        createdAt: new Date().toISOString(),
+      const nodeId = newId();
+      const addToSnapshot = (imageUrl?: string) => {
+        const node: GraphNodeRecord = {
+          id: nodeId,
+          kind: "friend",
+          name: input.name.trim(),
+          ...(input.description.trim() ? { description: input.description.trim() } : {}),
+          ...(imageUrl ? { imageUrl } : {}),
+          createdAt: new Date().toISOString(),
+        };
+        setSnapshot((s) => {
+          const nodes = [...s.nodes, node];
+          let links = s.links;
+          if (input.connectToId) {
+            links = [
+              ...links,
+              {
+                id: newId(),
+                source: node.id,
+                target: input.connectToId,
+                createdAt: new Date().toISOString(),
+              },
+            ];
+          }
+          return { ...s, nodes, links };
+        });
       };
-      setSnapshot((s) => {
-        const nodes = [...s.nodes, node];
-        let links = s.links;
-        if (input.connectToId) {
-          const link: GraphLinkRecord = {
-            id: newId(),
-            source: node.id,
-            target: input.connectToId,
-            createdAt: new Date().toISOString(),
-          };
-          links = [...links, link];
-        }
-        return { ...s, nodes, links };
-      });
+
+      if (input.imageDataUrl) {
+        void import("@/lib/friend-graph-storage-upload")
+          .then(({ uploadNodeImage }) => uploadNodeImage(nodeId, input.imageDataUrl!))
+          .then((url) => addToSnapshot(url))
+          .catch(() => addToSnapshot());
+      } else {
+        addToSnapshot();
+      }
     },
     [],
   );
@@ -397,8 +407,18 @@ export default function FriendGraphApp() {
 
   if (!hydrated) {
     return (
-      <div className="flex h-screen items-center justify-center bg-zinc-950 text-zinc-400">
-        Loading graph…
+      <div className="flex h-screen flex-col items-center justify-center gap-4 bg-zinc-950 text-zinc-400">
+        {syncBanner ? (
+          <>
+            <p className="text-sm font-medium text-red-400">Firestore connection failed</p>
+            <p className="max-w-sm text-center text-xs text-zinc-500">{syncBanner}</p>
+          </>
+        ) : (
+          <>
+            <div className="h-6 w-6 animate-spin rounded-full border-2 border-zinc-700 border-t-indigo-500" />
+            <p className="text-sm">Connecting to Firestore…</p>
+          </>
+        )}
       </div>
     );
   }
@@ -440,17 +460,10 @@ export default function FriendGraphApp() {
             Status:{" "}
             {syncMode === "loading" ? (
               <span className="text-zinc-400">connecting…</span>
-            ) : syncMode === "firebase" ? (
-              <span className="text-emerald-400/90">Firestore sync</span>
             ) : (
-              <span className="text-amber-400/90">Local only</span>
+              <span className="text-emerald-400/90">Firestore sync</span>
             )}
           </p>
-          {syncBanner ? (
-            <p className="mt-2 rounded-md border border-amber-500/30 bg-amber-950/40 px-2 py-1.5 text-[11px] text-amber-100/90">
-              {syncBanner}
-            </p>
-          ) : null}
         </header>
 
         <SearchAndFocus
