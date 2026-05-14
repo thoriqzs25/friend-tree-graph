@@ -66,6 +66,7 @@ export default function FriendGraphApp() {
   const [dims, setDims] = useState({ w: 800, h: 600 });
   const containerRef = useRef<HTMLDivElement>(null);
   const pushTimer = useRef<number | undefined>(undefined);
+  const [selectedLinkId, setSelectedLinkId] = useState<string | null>(null);
   // Track whether the current snapshot came from a remote Firestore update
   // (so we don't write it straight back, causing a pointless round-trip).
   const remoteSnapshotRef = useRef<FriendGraphSnapshot | null>(null);
@@ -137,11 +138,14 @@ export default function FriendGraphApp() {
   }, [snapshot, hydrated, syncMode]);
 
   useEffect(() => {
-    const update = () =>
-      setDims({ w: window.innerWidth, h: window.innerHeight });
-    update();
-    window.addEventListener("resize", update);
-    return () => window.removeEventListener("resize", update);
+    const el = containerRef.current;
+    if (!el) return;
+    const ro = new ResizeObserver((entries) => {
+      const { width, height } = entries[0]!.contentRect;
+      setDims({ w: Math.floor(width), h: Math.floor(height) });
+    });
+    ro.observe(el);
+    return () => ro.disconnect();
   }, []);
 
   const graphData = useMemo(() => {
@@ -228,6 +232,14 @@ export default function FriendGraphApp() {
     },
     [],
   );
+
+  const deleteLink = useCallback((id: string) => {
+    setSnapshot((s) => ({
+      ...s,
+      links: s.links.filter((l) => l.id !== id),
+    }));
+    setSelectedLinkId(null);
+  }, []);
 
   const deleteNode = useCallback((id: string) => {
     setSnapshot((s) => ({
@@ -523,7 +535,7 @@ export default function FriendGraphApp() {
         </div>
       </aside>
 
-      <div className="relative h-full w-full overflow-hidden bg-zinc-950">
+      <div ref={containerRef} className="relative h-full w-full overflow-hidden bg-zinc-950">
         <ForceGraph3D
           ref={fgRef}
           width={dims.w}
@@ -543,12 +555,20 @@ export default function FriendGraphApp() {
           linkCurvature={0.18}
           onNodeClick={(node) => {
             const id = String(node.id);
+            setSelectedLinkId(null);
             focusNode(id);
             setEditingNodeId(id);
+          }}
+          onLinkClick={(link) => {
+            const l = link as FGLink;
+            const id = l.id;
+            setSelectedLinkId((prev) => (prev === id ? null : id));
+            setEditingNodeId(null);
           }}
           onBackgroundClick={() => {
             clearFocus();
             setEditingNodeId(null);
+            setSelectedLinkId(null);
           }}
           enableNavigationControls
           showNavInfo={false}
@@ -566,6 +586,13 @@ export default function FriendGraphApp() {
             }}
             onDelete={() => deleteNode(editingNodeId)}
             onClose={() => setEditingNodeId(null)}
+          />
+        ) : selectedLinkId ? (
+          <DeleteEdgeOverlay
+            link={snapshot.links.find((l) => l.id === selectedLinkId)!}
+            nodes={snapshot.nodes}
+            onDelete={() => deleteLink(selectedLinkId)}
+            onClose={() => setSelectedLinkId(null)}
           />
         ) : focusedId ? (
           <div className="pointer-events-none absolute bottom-4 left-4 rounded-lg border border-indigo-500/30 bg-indigo-950/80 px-3 py-2 text-xs text-indigo-100 backdrop-blur-sm">
@@ -825,6 +852,47 @@ function ConnectForm(props: {
         Add edge
       </button>
     </section>
+  );
+}
+
+function DeleteEdgeOverlay(props: {
+  link: GraphLinkRecord;
+  nodes: GraphNodeRecord[];
+  onDelete: () => void;
+  onClose: () => void;
+}) {
+  const { link, nodes } = props;
+  const sourceName = displayName(nodes.find((n) => n.id === link.source) ?? { id: link.source, kind: "friend", name: link.source, createdAt: "" });
+  const targetName = displayName(nodes.find((n) => n.id === link.target) ?? { id: link.target, kind: "friend", name: link.target, createdAt: "" });
+
+  return (
+    <div className="absolute inset-0 flex items-center justify-center bg-black/50 backdrop-blur-sm" onClick={props.onClose}>
+      <div
+        className="w-full max-w-xs rounded-xl border border-zinc-700 bg-zinc-900 p-5 shadow-2xl"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <p className="mb-1 text-xs font-medium uppercase tracking-wide text-zinc-500">Delete edge</p>
+        <p className="mb-4 text-sm text-zinc-200">
+          <span className="font-semibold text-white">{sourceName}</span>
+          <span className="mx-2 text-zinc-500">—</span>
+          <span className="font-semibold text-white">{targetName}</span>
+        </p>
+        <div className="flex gap-2">
+          <button
+            onClick={props.onDelete}
+            className="flex-1 rounded-md bg-red-600 py-2 text-sm font-medium text-white hover:bg-red-500"
+          >
+            Delete
+          </button>
+          <button
+            onClick={props.onClose}
+            className="flex-1 rounded-md border border-zinc-700 bg-zinc-800 py-2 text-sm font-medium text-zinc-200 hover:bg-zinc-700"
+          >
+            Cancel
+          </button>
+        </div>
+      </div>
+    </div>
   );
 }
 
