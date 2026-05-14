@@ -63,6 +63,7 @@ export default function FriendGraphApp() {
     undefined,
   );
 
+  const SIDEBAR_W = 380;
   const [dims, setDims] = useState({ w: 800, h: 600 });
   const containerRef = useRef<HTMLDivElement>(null);
   const pushTimer = useRef<number | undefined>(undefined);
@@ -137,16 +138,14 @@ export default function FriendGraphApp() {
   }, [snapshot, hydrated, syncMode]);
 
   useEffect(() => {
-    if (!containerRef.current) return;
-    const el = containerRef.current;
-    const ro = new ResizeObserver(() => {
-      const r = el.getBoundingClientRect();
-      setDims({ w: Math.floor(r.width), h: Math.floor(r.height) });
-    });
-    ro.observe(el);
-    const r = el.getBoundingClientRect();
-    setDims({ w: Math.floor(r.width), h: Math.floor(r.height) });
-    return () => ro.disconnect();
+    const update = () =>
+      setDims({
+        w: window.innerWidth - SIDEBAR_W,
+        h: window.innerHeight,
+      });
+    update();
+    window.addEventListener("resize", update);
+    return () => window.removeEventListener("resize", update);
   }, []);
 
   const graphData = useMemo(() => {
@@ -299,25 +298,79 @@ export default function FriendGraphApp() {
     const n = node as FGNode;
     const g = new THREE.Group();
     const radius = n.kind === "category" ? 7 : 6;
-    const geom = new THREE.SphereGeometry(radius, 28, 28);
-    const mat = new THREE.MeshStandardMaterial({
-      color:
-        n.kind === "category" ? new THREE.Color("#818cf8") : new THREE.Color("#34d399"),
-      metalness: 0.15,
-      roughness: 0.55,
-    });
+
+    const buildLabel = (yOffset: number) => {
+      const label = displayName(n);
+      const fontSize = 28;
+      const padding = 14;
+      const lc = document.createElement("canvas");
+      const lctx = lc.getContext("2d")!;
+      lctx.font = `600 ${fontSize}px Inter, system-ui, sans-serif`;
+      const textW = lctx.measureText(label).width;
+      lc.width = textW + padding * 2;
+      lc.height = fontSize + padding;
+      lctx.font = `600 ${fontSize}px Inter, system-ui, sans-serif`;
+      lctx.fillStyle = "rgba(255,255,255,0.93)";
+      lctx.fillText(label, padding, fontSize);
+      const ltex = new THREE.CanvasTexture(lc);
+      const lmat = new THREE.SpriteMaterial({ map: ltex, transparent: true, depthWrite: false });
+      const lsprite = new THREE.Sprite(lmat);
+      const lw = lc.width / 12;
+      const lh = lc.height / 12;
+      lsprite.scale.set(lw, lh, 1);
+      lsprite.position.set(0, yOffset, 0);
+      return lsprite;
+    };
 
     if (n.kind === "friend" && n.imageUrl) {
-      new THREE.TextureLoader().load(n.imageUrl, (tex) => {
-        tex.colorSpace = THREE.SRGBColorSpace;
-        mat.map = tex;
-        mat.color = new THREE.Color("#ffffff");
-        mat.needsUpdate = true;
+      // Draw the photo clipped to a circle on a canvas sprite
+      const SIZE = 128;
+      const pc = document.createElement("canvas");
+      pc.width = SIZE;
+      pc.height = SIZE;
+      const pctx = pc.getContext("2d")!;
+
+      const img = new Image();
+      img.onload = () => {
+        pctx.clearRect(0, 0, SIZE, SIZE);
+        pctx.beginPath();
+        pctx.arc(SIZE / 2, SIZE / 2, SIZE / 2 - 2, 0, Math.PI * 2);
+        pctx.closePath();
+        pctx.clip();
+        // cover-fit the image
+        const aspect = img.naturalWidth / img.naturalHeight;
+        let sx = 0, sy = 0, sw = img.naturalWidth, sh = img.naturalHeight;
+        if (aspect > 1) { sw = img.naturalHeight; sx = (img.naturalWidth - sw) / 2; }
+        else { sh = img.naturalWidth; sy = (img.naturalHeight - sh) / 2; }
+        pctx.drawImage(img, sx, sy, sw, sh, 0, 0, SIZE, SIZE);
+        // ring
+        pctx.beginPath();
+        pctx.arc(SIZE / 2, SIZE / 2, SIZE / 2 - 2, 0, Math.PI * 2);
+        pctx.strokeStyle = "rgba(52,211,153,0.85)";
+        pctx.lineWidth = 5;
+        pctx.stroke();
+        ptex.needsUpdate = true;
+      };
+      img.src = n.imageUrl;
+
+      const ptex = new THREE.CanvasTexture(pc);
+      const pmat = new THREE.SpriteMaterial({ map: ptex, transparent: true, depthWrite: false });
+      const psprite = new THREE.Sprite(pmat);
+      psprite.scale.set(radius * 2.4, radius * 2.4, 1);
+      g.add(psprite);
+      g.add(buildLabel(radius * 1.5));
+    } else {
+      // Plain sphere for friends without image and all categories
+      const geom = new THREE.SphereGeometry(radius, 28, 28);
+      const mat = new THREE.MeshStandardMaterial({
+        color: n.kind === "category" ? new THREE.Color("#818cf8") : new THREE.Color("#34d399"),
+        metalness: 0.15,
+        roughness: 0.55,
       });
+      g.add(new THREE.Mesh(geom, mat));
+      g.add(buildLabel(radius + 5));
     }
 
-    const mesh = new THREE.Mesh(geom, mat);
-    g.add(mesh);
     return g;
   }, []);
 
@@ -330,8 +383,8 @@ export default function FriendGraphApp() {
   }
 
   return (
-    <div className="flex h-screen w-full bg-zinc-950 text-zinc-100">
-      <aside className="flex w-[min(100%,380px)] shrink-0 flex-col gap-5 overflow-y-auto border-r border-zinc-800/80 p-5">
+    <div className="flex h-screen w-screen overflow-hidden bg-zinc-950 text-zinc-100">
+      <aside className="flex h-full w-[min(100%,380px)] shrink-0 flex-col gap-5 overflow-y-auto border-r border-zinc-800/80 p-5">
         <header>
           <h1 className="text-lg font-semibold tracking-tight text-white">
             Friend graph
@@ -384,7 +437,7 @@ export default function FriendGraphApp() {
         <ConnectForm nodes={snapshot.nodes} onConnect={addLink} />
       </aside>
 
-      <div ref={containerRef} className="relative min-w-0 flex-1 bg-zinc-950">
+      <div className="relative min-w-0 min-h-0 flex-1 overflow-hidden bg-zinc-950">
         <ForceGraph3D
           ref={fgRef}
           width={dims.w}
