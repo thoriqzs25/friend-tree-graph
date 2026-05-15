@@ -446,7 +446,7 @@ export default function FriendGraphApp() {
 
   if (!hydrated) {
     return (
-      <div className="flex h-screen flex-col items-center justify-center gap-4 bg-zinc-950 text-zinc-400">
+      <div className="flex h-[100dvh] flex-col items-center justify-center gap-4 bg-zinc-950 text-zinc-400">
         {syncBanner ? (
           <>
             <p className="text-sm font-medium text-red-400">Firestore connection failed</p>
@@ -463,7 +463,7 @@ export default function FriendGraphApp() {
   }
 
   return (
-    <div className="relative h-screen w-screen overflow-hidden bg-zinc-950 text-zinc-100">
+    <div className="relative h-[100dvh] w-screen overflow-hidden bg-zinc-950 text-zinc-100">
       {/* backdrop — tap outside on mobile to close */}
       {sidebarOpen && (
         <div
@@ -535,7 +535,7 @@ export default function FriendGraphApp() {
         </div>
       </aside>
 
-      <div ref={containerRef} className="relative h-full w-full overflow-hidden bg-zinc-950">
+      <div ref={containerRef} className="absolute inset-0 overflow-hidden bg-zinc-950">
         <ForceGraph3D
           ref={fgRef}
           width={dims.w}

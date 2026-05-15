@@ -84,7 +84,7 @@ export default function PinPage() {
   };
 
   return (
-    <div className="flex h-screen w-screen flex-col items-center justify-center bg-zinc-950">
+    <div className="flex h-[100dvh] w-screen flex-col items-center justify-center bg-zinc-950">
       <div className="flex flex-col items-center gap-8 px-6">
         {/* icon */}
         <div className="flex h-16 w-16 items-center justify-center rounded-2xl bg-zinc-800 text-3xl shadow-lg">
