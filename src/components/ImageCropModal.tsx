@@ -27,6 +27,8 @@ export default function ImageCropModal({ imageSrc, onConfirm, onCancel }: Props)
           image={imageSrc}
           crop={crop}
           zoom={zoom}
+          minZoom={1}
+          maxZoom={10}
           aspect={1}
           cropShape="round"
           showGrid={false}
@@ -45,7 +47,7 @@ export default function ImageCropModal({ imageSrc, onConfirm, onCancel }: Props)
         <input
           type="range"
           min={1}
-          max={3}
+          max={10}
           step={0.05}
           value={zoom}
           onChange={(e) => setZoom(Number(e.target.value))}
