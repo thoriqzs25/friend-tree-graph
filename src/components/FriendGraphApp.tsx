@@ -371,6 +371,7 @@ export default function FriendGraphApp() {
   const nodeThreeObject = useCallback((node: NodeObject) => {
     const n = node as FGNode;
     const g = new THREE.Group();
+    g.renderOrder = 1;
     const radius = n.kind === "category" ? 7 : 6;
 
     const buildLabel = (yOffset: number) => {
@@ -387,8 +388,9 @@ export default function FriendGraphApp() {
       lctx.fillStyle = "rgba(255,255,255,0.93)";
       lctx.fillText(label, padding, fontSize);
       const ltex = new THREE.CanvasTexture(lc);
-      const lmat = new THREE.SpriteMaterial({ map: ltex, transparent: true, depthWrite: false });
+      const lmat = new THREE.SpriteMaterial({ map: ltex, transparent: true, depthWrite: false, depthTest: false });
       const lsprite = new THREE.Sprite(lmat);
+      lsprite.renderOrder = 1;
       const lw = lc.width / 12;
       const lh = lc.height / 12;
       lsprite.scale.set(lw, lh, 1);
@@ -403,8 +405,9 @@ export default function FriendGraphApp() {
       pc.height = SIZE;
       const pctx = pc.getContext("2d")!;
       const ptex = new THREE.CanvasTexture(pc);
-      const pmat = new THREE.SpriteMaterial({ map: ptex, transparent: true, depthWrite: false });
+      const pmat = new THREE.SpriteMaterial({ map: ptex, transparent: true, depthWrite: false, depthTest: false });
       const psprite = new THREE.Sprite(pmat);
+      psprite.renderOrder = 1;
       psprite.scale.set(radius * 2.4, radius * 2.4, 1);
       g.add(psprite);
       g.add(buildLabel(radius * 1.5));
@@ -445,8 +448,11 @@ export default function FriendGraphApp() {
         color: n.kind === "category" ? new THREE.Color("#818cf8") : new THREE.Color("#34d399"),
         metalness: 0.15,
         roughness: 0.55,
+        depthTest: false,
       });
-      g.add(new THREE.Mesh(geom, mat));
+      const mesh = new THREE.Mesh(geom, mat);
+      mesh.renderOrder = 1;
+      g.add(mesh);
       g.add(buildLabel(radius + 5));
     }
 
