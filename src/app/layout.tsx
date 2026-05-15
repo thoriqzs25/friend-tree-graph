@@ -13,8 +13,9 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Friend Tree Graph",
+  title: "MyFTG",
   description: "3D friend tree graph — local data, ready for a database",
+  icons: { icon: "/favicon.svg" },
 };
 
 export default function RootLayout({

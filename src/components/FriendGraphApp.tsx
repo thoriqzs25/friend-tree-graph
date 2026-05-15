@@ -63,7 +63,10 @@ export default function FriendGraphApp() {
 
   const SIDEBAR_W = 380;
   const [sidebarOpen, setSidebarOpen] = useState(true);
-  const [dims, setDims] = useState({ w: 800, h: 600 });
+  const [dims, setDims] = useState(() => ({
+    w: typeof window !== "undefined" ? window.innerWidth : 800,
+    h: typeof window !== "undefined" ? window.innerHeight : 600,
+  }));
   const containerRef = useRef<HTMLDivElement>(null);
   const pushTimer = useRef<number | undefined>(undefined);
   const [selectedLinkId, setSelectedLinkId] = useState<string | null>(null);
@@ -138,14 +141,20 @@ export default function FriendGraphApp() {
   }, [snapshot, hydrated, syncMode]);
 
   useEffect(() => {
-    const el = containerRef.current;
-    if (!el) return;
-    const ro = new ResizeObserver((entries) => {
-      const { width, height } = entries[0]!.contentRect;
-      setDims({ w: Math.floor(width), h: Math.floor(height) });
-    });
-    ro.observe(el);
-    return () => ro.disconnect();
+    const update = () => {
+      const vv = window.visualViewport;
+      setDims({
+        w: Math.floor(vv ? vv.width : window.innerWidth),
+        h: Math.floor(vv ? vv.height : window.innerHeight),
+      });
+    };
+    update();
+    window.visualViewport?.addEventListener("resize", update);
+    window.addEventListener("resize", update);
+    return () => {
+      window.visualViewport?.removeEventListener("resize", update);
+      window.removeEventListener("resize", update);
+    };
   }, []);
 
   const graphData = useMemo(() => {
