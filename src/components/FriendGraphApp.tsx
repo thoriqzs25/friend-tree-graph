@@ -597,11 +597,17 @@ export default function FriendGraphApp() {
         {editingNodeId ? (
           <EditNodeModal
             node={snapshot.nodes.find((n) => n.id === editingNodeId)!}
+            allNodes={snapshot.nodes}
+            connectedLinks={snapshot.links.filter(
+              (l) => l.source === editingNodeId || l.target === editingNodeId,
+            )}
             onSave={(patch) => {
               updateNode(editingNodeId, patch);
               setEditingNodeId(null);
             }}
             onDelete={() => deleteNode(editingNodeId)}
+            onDeleteLink={(linkId) => deleteLink(linkId)}
+            onAddLink={(targetId) => addLink(editingNodeId, targetId)}
             onClose={() => setEditingNodeId(null)}
           />
         ) : selectedLinkId ? (
@@ -923,10 +929,55 @@ function DeleteEdgeOverlay(props: {
   );
 }
 
+function AddLinkRow(props: {
+  nodeId: string;
+  allNodes: GraphNodeRecord[];
+  connectedLinks: GraphLinkRecord[];
+  onAdd: (targetId: string) => void;
+}) {
+  const [targetId, setTargetId] = useState("");
+  const connectedIds = new Set(
+    props.connectedLinks.map((l) =>
+      l.source === props.nodeId ? l.target : l.source,
+    ),
+  );
+  const available = props.allNodes.filter(
+    (n) => n.id !== props.nodeId && !connectedIds.has(n.id),
+  );
+
+  return (
+    <div className="mt-2 flex gap-2">
+      <select
+        value={targetId}
+        onChange={(e) => setTargetId(e.target.value)}
+        className="flex-1 rounded-md border border-zinc-700 bg-zinc-900 px-2 py-1.5 text-xs text-zinc-200 outline-none focus:border-indigo-500/60"
+      >
+        <option value="">Connect to…</option>
+        {available.map((n) => (
+          <option key={n.id} value={n.id}>
+            {displayName(n)}
+          </option>
+        ))}
+      </select>
+      <button
+        disabled={!targetId}
+        onClick={() => { props.onAdd(targetId); setTargetId(""); }}
+        className="rounded-md bg-indigo-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-indigo-500 disabled:opacity-40"
+      >
+        Add
+      </button>
+    </div>
+  );
+}
+
 function EditNodeModal(props: {
   node: GraphNodeRecord;
+  allNodes: GraphNodeRecord[];
+  connectedLinks: GraphLinkRecord[];
   onSave: (patch: Partial<Pick<GraphNodeRecord, "name" | "description" | "imageUrl">>) => void;
   onDelete: () => void;
+  onDeleteLink: (linkId: string) => void;
+  onAddLink: (targetId: string) => void;
   onClose: () => void;
 }) {
   const { node } = props;
@@ -958,7 +1009,7 @@ function EditNodeModal(props: {
   return (
     <div className="absolute inset-0 flex items-center justify-center bg-black/50 backdrop-blur-sm">
       <div
-        className="w-full max-w-sm rounded-xl border border-zinc-700 bg-zinc-900 shadow-2xl"
+        className="flex max-h-[90dvh] w-full max-w-sm flex-col rounded-xl border border-zinc-700 bg-zinc-900 shadow-2xl"
         onClick={(e) => e.stopPropagation()}
       >
         {/* header */}
@@ -976,7 +1027,7 @@ function EditNodeModal(props: {
         </div>
 
         {/* body */}
-        <div className="space-y-4 px-5 py-4">
+        <div className="flex-1 space-y-4 overflow-y-auto px-5 py-4">
           <div>
             <label className="mb-1 block text-xs text-zinc-400">Name</label>
             <input
@@ -995,6 +1046,42 @@ function EditNodeModal(props: {
               rows={2}
               placeholder="Description (optional)"
               className={`${inputCls} resize-none`}
+            />
+          </div>
+
+          {/* Connections */}
+          <div>
+            <label className="mb-2 block text-xs text-zinc-400">Connections</label>
+            <div className="flex flex-wrap gap-1.5">
+              {props.connectedLinks.length === 0 && (
+                <span className="text-xs text-zinc-600">No connections yet</span>
+              )}
+              {props.connectedLinks.map((link) => {
+                const otherId = link.source === node.id ? link.target : link.source;
+                const other = props.allNodes.find((n) => n.id === otherId);
+                return (
+                  <span
+                    key={link.id}
+                    className="flex items-center gap-1 rounded-full border border-zinc-700 bg-zinc-800 py-0.5 pl-2.5 pr-1 text-xs text-zinc-200"
+                  >
+                    {other ? displayName(other) : otherId}
+                    <button
+                      onClick={() => props.onDeleteLink(link.id)}
+                      className="flex h-4 w-4 items-center justify-center rounded-full text-zinc-500 hover:bg-zinc-700 hover:text-red-400"
+                      title="Remove connection"
+                    >
+                      ×
+                    </button>
+                  </span>
+                );
+              })}
+            </div>
+            {/* Add new connection */}
+            <AddLinkRow
+              nodeId={node.id}
+              allNodes={props.allNodes}
+              connectedLinks={props.connectedLinks}
+              onAdd={props.onAddLink}
             />
           </div>
 
