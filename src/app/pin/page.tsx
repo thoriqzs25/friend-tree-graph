@@ -140,6 +140,10 @@ export default function PinPage() {
         </button>
       </div>
 
+      <p className="mt-8 font-mono text-[11px] text-zinc-700">
+        {process.env.NEXT_PUBLIC_COMMIT_SHA ?? "dev"}
+      </p>
+
       <style>{`
         @keyframes shake {
           0%, 100% { transform: translateX(0); }

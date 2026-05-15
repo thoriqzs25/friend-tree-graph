@@ -530,8 +530,8 @@ export default function FriendGraphApp() {
 
         <ConnectForm nodes={snapshot.nodes} onConnect={addLink} />
 
-        <div className="mt-auto pt-4 text-center text-[11px] text-zinc-600">
-          v1.0.5
+        <div className="mt-auto pt-4 text-center font-mono text-[11px] text-zinc-600">
+          {process.env.NEXT_PUBLIC_COMMIT_SHA ?? "dev"}
         </div>
       </aside>
 
