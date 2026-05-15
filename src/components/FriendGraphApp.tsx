@@ -16,6 +16,8 @@ import {
   graphPayloadEqual,
 } from "@/lib/friend-graph-storage";
 import type { FriendGraphSnapshot } from "@/types/friend-graph";
+import ImageCropModal from "@/components/ImageCropModal";
+import { getCroppedDataUrl } from "@/lib/crop-image";
 
 const ForceGraph3D = dynamic(() => import("@/components/ForceGraph3DCanvas"), {
   ssr: false,
@@ -697,6 +699,22 @@ function AddFriendForm(props: {
   const [description, setDescription] = useState("");
   const [connectToId, setConnectToId] = useState("");
   const [imageDataUrl, setImageDataUrl] = useState<string | null>(null);
+  const [cropSrc, setCropSrc] = useState<string | null>(null);
+
+  if (cropSrc) {
+    return (
+      <ImageCropModal
+        imageSrc={cropSrc}
+        onConfirm={async (cropPx) => {
+          const cropped = await getCroppedDataUrl(cropSrc, cropPx);
+          const { compressImage } = await import("@/lib/compress-image");
+          setImageDataUrl(await compressImage(cropped));
+          setCropSrc(null);
+        }}
+        onCancel={() => setCropSrc(null)}
+      />
+    );
+  }
 
   return (
     <section className="space-y-3 rounded-lg border border-zinc-800 bg-zinc-900/40 p-4">
@@ -724,19 +742,13 @@ function AddFriendForm(props: {
           className="mt-1 block w-full text-xs text-zinc-400 file:mr-2 file:rounded file:border-0 file:bg-zinc-800 file:px-2 file:py-1 file:text-zinc-200"
           onChange={(e) => {
             const file = e.target.files?.[0];
-            if (!file) {
-              setImageDataUrl(null);
-              return;
-            }
+            if (!file) { setImageDataUrl(null); return; }
             const reader = new FileReader();
             reader.onload = () => {
-              if (typeof reader.result === "string") {
-                void import("@/lib/compress-image")
-                  .then(({ compressImage }) => compressImage(reader.result as string))
-                  .then((compressed) => setImageDataUrl(compressed));
-              }
+              if (typeof reader.result === "string") setCropSrc(reader.result);
             };
             reader.readAsDataURL(file);
+            e.target.value = "";
           }}
         />
       </label>
@@ -921,10 +933,24 @@ function EditNodeModal(props: {
   const [name, setName] = useState(node.name);
   const [description, setDescription] = useState(node.description ?? "");
   const [imageDataUrl, setImageDataUrl] = useState<string | null>(node.imageUrl ?? null);
-  useEffect(() => {
-    setImageDataUrl(node.imageUrl ?? null);
-  }, [node.imageUrl]);
+  useEffect(() => { setImageDataUrl(node.imageUrl ?? null); }, [node.imageUrl]);
   const [confirmDelete, setConfirmDelete] = useState(false);
+  const [cropSrc, setCropSrc] = useState<string | null>(null);
+
+  if (cropSrc) {
+    return (
+      <ImageCropModal
+        imageSrc={cropSrc}
+        onConfirm={async (cropPx) => {
+          const cropped = await getCroppedDataUrl(cropSrc, cropPx);
+          const { compressImage } = await import("@/lib/compress-image");
+          setImageDataUrl(await compressImage(cropped));
+          setCropSrc(null);
+        }}
+        onCancel={() => setCropSrc(null)}
+      />
+    );
+  }
 
   const inputCls =
     "w-full rounded-md border border-zinc-600 bg-zinc-900 px-3 py-2 text-sm outline-none focus:border-indigo-500/60";
@@ -999,13 +1025,10 @@ function EditNodeModal(props: {
                   if (!file) return;
                   const reader = new FileReader();
                   reader.onload = () => {
-                    if (typeof reader.result === "string") {
-                      void import("@/lib/compress-image")
-                        .then(({ compressImage }) => compressImage(reader.result as string))
-                        .then((compressed) => setImageDataUrl(compressed));
-                    }
+                    if (typeof reader.result === "string") setCropSrc(reader.result);
                   };
                   reader.readAsDataURL(file);
+                  (e.target as HTMLInputElement).value = "";
                 }}
               />
             </div>
