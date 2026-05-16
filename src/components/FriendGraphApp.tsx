@@ -18,6 +18,7 @@ import {
 import type { FriendGraphSnapshot } from "@/types/friend-graph";
 import ImageCropModal from "@/components/ImageCropModal";
 import { getCroppedDataUrl } from "@/lib/crop-image";
+import SearchableSelect from "@/components/SearchableSelect";
 
 const ForceGraph3D = dynamic(() => import("@/components/ForceGraph3DCanvas"), {
   ssr: false,
@@ -504,14 +505,9 @@ export default function FriendGraphApp() {
         }`}
       >
         <header>
-          <h1 className="text-lg font-semibold tracking-tight text-white">
+          <h1 className="text-lg mt-8 font-semibold tracking-tight text-white">
             Friend Tree Graph
           </h1>
-          <p className="mt-1 text-xs leading-relaxed text-zinc-500">
-            3D graph with offline cache. Enable{" "}
-            <span className="text-zinc-400">NEXT_PUBLIC_FIREBASE_*</span> for
-            Firestore sync (anonymous auth).
-          </p>
           <p className="mt-2 text-[11px] text-zinc-500">
             Status:{" "}
             {syncMode === "loading" ? (
@@ -758,18 +754,12 @@ function AddFriendForm(props: {
           }}
         />
       </label>
-      <select
+      <SearchableSelect
         value={connectToId}
-        onChange={(e) => setConnectToId(e.target.value)}
-        className="w-full rounded-md border border-zinc-700 bg-zinc-950/80 px-3 py-2 text-sm outline-none focus:border-indigo-500/50"
-      >
-        <option value="">Link to… (optional)</option>
-        {props.nodes.map((n) => (
-          <option key={n.id} value={n.id}>
-            {displayName(n)}
-          </option>
-        ))}
-      </select>
+        onChange={setConnectToId}
+        options={props.nodes.map((n) => ({ value: n.id, label: displayName(n) }))}
+        placeholder="Link to… (optional)"
+      />
       <button
         type="button"
         onClick={() => {
@@ -810,18 +800,12 @@ function AddCategoryForm(props: {
         onChange={(e) => setName(e.target.value)}
         className="w-full rounded-md border border-zinc-700 bg-zinc-950/80 px-3 py-2 text-sm outline-none focus:border-indigo-500/50"
       />
-      <select
+      <SearchableSelect
         value={connectToId}
-        onChange={(e) => setConnectToId(e.target.value)}
-        className="w-full rounded-md border border-zinc-700 bg-zinc-950/80 px-3 py-2 text-sm outline-none focus:border-indigo-500/50"
-      >
-        <option value="">Link to… (optional)</option>
-        {props.nodes.map((n) => (
-          <option key={n.id} value={n.id}>
-            {displayName(n)}
-          </option>
-        ))}
-      </select>
+        onChange={setConnectToId}
+        options={props.nodes.map((n) => ({ value: n.id, label: displayName(n) }))}
+        placeholder="Link to… (optional)"
+      />
       <button
         type="button"
         onClick={() => {
@@ -850,30 +834,18 @@ function ConnectForm(props: {
       <h2 className="text-xs font-medium uppercase tracking-wide text-zinc-500">
         Connect nodes
       </h2>
-      <select
+      <SearchableSelect
         value={a}
-        onChange={(e) => setA(e.target.value)}
-        className="w-full rounded-md border border-zinc-700 bg-zinc-950/80 px-3 py-2 text-sm"
-      >
-        <option value="">From…</option>
-        {props.nodes.map((n) => (
-          <option key={n.id} value={n.id}>
-            {displayName(n)}
-          </option>
-        ))}
-      </select>
-      <select
+        onChange={setA}
+        options={props.nodes.map((n) => ({ value: n.id, label: displayName(n) }))}
+        placeholder="From…"
+      />
+      <SearchableSelect
         value={b}
-        onChange={(e) => setB(e.target.value)}
-        className="w-full rounded-md border border-zinc-700 bg-zinc-950/80 px-3 py-2 text-sm"
-      >
-        <option value="">To…</option>
-        {props.nodes.map((n) => (
-          <option key={n.id} value={n.id}>
-            {displayName(n)}
-          </option>
-        ))}
-      </select>
+        onChange={setB}
+        options={props.nodes.map((n) => ({ value: n.id, label: displayName(n) }))}
+        placeholder="To…"
+      />
       <button
         type="button"
         onClick={() => {
@@ -947,18 +919,13 @@ function AddLinkRow(props: {
 
   return (
     <div className="mt-2 flex gap-2">
-      <select
+      <SearchableSelect
         value={targetId}
-        onChange={(e) => setTargetId(e.target.value)}
-        className="flex-1 rounded-md border border-zinc-700 bg-zinc-900 px-2 py-1.5 text-xs text-zinc-200 outline-none focus:border-indigo-500/60"
-      >
-        <option value="">Connect to…</option>
-        {available.map((n) => (
-          <option key={n.id} value={n.id}>
-            {displayName(n)}
-          </option>
-        ))}
-      </select>
+        onChange={setTargetId}
+        options={available.map((n) => ({ value: n.id, label: displayName(n) }))}
+        placeholder="Connect to…"
+        className="flex-1"
+      />
       <button
         disabled={!targetId}
         onClick={() => { props.onAdd(targetId); setTargetId(""); }}
