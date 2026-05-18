@@ -754,6 +754,22 @@ function AddFriendForm(props: {
           }}
         />
       </label>
+      {imageDataUrl && (
+        <div className="flex items-center gap-3">
+          <img
+            src={imageDataUrl}
+            alt="preview"
+            className="h-12 w-12 rounded-full object-cover ring-2 ring-emerald-500/50"
+          />
+          <button
+            type="button"
+            onClick={() => setImageDataUrl(null)}
+            className="text-xs text-zinc-400 hover:text-red-400"
+          >
+            Remove photo
+          </button>
+        </div>
+      )}
       <SearchableSelect
         value={connectToId}
         onChange={setConnectToId}
